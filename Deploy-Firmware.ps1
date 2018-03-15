@@ -206,6 +206,24 @@ Function Disable-VMHost-SSH {
 # EndFuntion Disable-VMHost-SSH
 #******************************
 
+#********************
+# Funtion Reboot-Host
+#********************
+Function Reboot-Host {
+    [CmdletBinding()]
+    Param($vmhost)
+    $vms = get-vmhost -Name $vmhost | get-vm | where {$_.PowerState -eq "PoweredOn"}
+    foreach ($vm in $vms) {
+        Shutdown-VMGuest -VM $vm -Confirm:$false
+        }
+    Sleep 60
+    Restart-VMHost -VMHost $vmhost -Force -Confirm:$false
+}
+#***********************
+# EndFuntion Reboot-Host
+#***********************
+
+
 #***************************
 # Funtion Build-Host-Strings
 #***************************
@@ -300,6 +318,7 @@ ForEach ($VMhost in $VMHostList){
     Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW
     Execute-Payload $SSHInfo.host $RootPW
     Disable-VMHost-SSH $VMHost
+    Reboot-Host $VMhost
     "----------------------------------------------------------"
 }
 
