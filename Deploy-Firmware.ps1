@@ -194,7 +194,7 @@ Function Enable-VMHost-SSH {
 #*****************************
 
 #***************************
-# Funtion Disable-VMHost-SSH
+# Function Disable-VMHost-SSH
 #***************************
 Function Disable-VMHost-SSH {
     [CmdletBinding()]
@@ -203,26 +203,47 @@ Function Disable-VMHost-SSH {
     Stop-VMHostService -HostService (Get-VMHostService -vmhost $vmhost | Where {$_.key -eq "TSM-SSH"}) -Confirm:$False >$null
 }
 #******************************
-# EndFuntion Disable-VMHost-SSH
+# EndFunction Disable-VMHost-SSH
 #******************************
 
-#********************
-# Funtion Reboot-Host
-#********************
-Function Reboot-Host {
+#*********************
+# Function Shutdown-VMs
+#*********************
+Function Shutdown-VMs {
     [CmdletBinding()]
     Param($vmhost)
     $vms = get-vmhost -Name $vmhost | get-vm | where {$_.PowerState -eq "PoweredOn"}
     foreach ($vm in $vms) {
-        Shutdown-VMGuest -VM $vm -Confirm:$false
+        "Shutting Down $vm on $vmhost"
+        Shutdown-VMGuest -VM $vm -Confirm:$false >$null
         }
-    Sleep 60
-    Restart-VMHost -VMHost $vmhost -Force -Confirm:$false
+   # Sleep 60
+    
 }
-#***********************
-# EndFuntion Reboot-Host
-#***********************
+#************************
+# EndFunction Shutdown-VMs
+#************************
 
+
+#*********************
+# Function Reboot-Host
+#*********************
+Function Reboot-Host {
+    [CmdletBinding()]
+    Param($vmhost)
+    $vms = get-vmhost -Name $vmhost | get-vm | where {$_.PowerState -eq "PoweredOn"} 
+    If ($vms.count -eq 0) {
+        "Restarting $vmhost"
+        Restart-VMHost -VMHost $vmhost -Force -Confirm:$false >$null
+        }
+        Else {
+            Sleep 30
+            Reboot-Host $VMhost
+            }
+}
+#************************
+# EndFunction Reboot-Host
+#************************
 
 #***************************
 # Funtion Build-Host-Strings
@@ -318,8 +339,13 @@ ForEach ($VMhost in $VMHostList){
     Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW
     Execute-Payload $SSHInfo.host $RootPW
     Disable-VMHost-SSH $VMHost
-    Reboot-Host $VMhost
+    Shutdown-VMs $VMhost
     "----------------------------------------------------------"
+}
+#Loop through again and initiate host reboots
+"Processing Target List for Host Reboots"
+ForEach ($VMhost in $VMHostList){
+    Reboot-Host $VMhost  
 }
 
 Disconnect-VC
