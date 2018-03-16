@@ -150,6 +150,23 @@ Function Get-FileName {
 # EndFunction Get-FileName
 #*************************
 
+#*************************
+# Function Get-CommandFile
+#*************************
+Function Get-CommandFile {
+    [CmdletBinding()]
+    Param($initialDirectory)
+    [System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null
+    $OpenFileDialog = New-Object System.Windows.Forms.OpenFileDialog
+    $OpenFileDialog.initialDirectory = $initialDirectory
+    $OpenFileDialog.filter = "TXT (*.txt)| *.txt"
+    $OpenFileDialog.ShowDialog() | Out-Null
+    Return $OpenFileDialog.filename
+}
+#****************************
+# EndFunction Get-CommandFile
+#****************************
+
 #******************************
 # Function Generate-Command-Txt
 #******************************
@@ -295,8 +312,8 @@ Function Transfer-Payload-to-Host{
 #************************
 Function Execute-Payload{
     [CmdletBinding()]
-    Param($SSHHost, $RootPW)
-    $CmdTxt = "$Global:Folder\command.txt"
+    Param($SSHHost, $RootPW, $CmdTxt)
+    #$CmdTxt = "$Global:Folder\command.txt"
     plink -ssh $SSHHost -pw $RootPW -m $CmdTxt
 }
 #************************
@@ -325,8 +342,10 @@ $FileToTransfer = Get-FileToTransfer $Global:Folder
 "Get Target List"
 $inputFile = Get-FileName $Global:Folder
 "----------------------------------------------------------"
-"Generate Command.txt to be used later during payload execution"
-Generate-Command-Txt $FileToTransfer
+#"Generate Command.txt to be used later during payload execution"
+"Get Command File for execution of payload"
+#Generate-Command-Txt $FileToTransfer
+$CommandFile = Get-FileName $Global:Folder
 "----------------------------------------------------------"
 "Reading Target List"
 $VMHostList = Read-TargetList $inputFile
@@ -337,7 +356,7 @@ ForEach ($VMhost in $VMHostList){
     $SSHInfo = Build-Host-Strings $VMhost
     Accept-SSH-Key $SSHInfo.host
     Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW
-    Execute-Payload $SSHInfo.host $RootPW
+    Execute-Payload $SSHInfo.host $RootPW $CommandFile
     Disable-VMHost-SSH $VMHost
     Shutdown-VMs $VMhost
     "----------------------------------------------------------"
