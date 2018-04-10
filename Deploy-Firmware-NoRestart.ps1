@@ -41,7 +41,7 @@ Update <Date>
 -----------------------------------------------------------------------------
 *******************************************************************************************************************
 #>
-
+<#
 # +------------------------------------------------------+
 # |        Load VMware modules if not loaded             |
 # +------------------------------------------------------+
@@ -57,6 +57,7 @@ if ( !(Get-Module -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue)
     . (join-path -path (Get-ItemProperty  $Regkey).InstallPath -childpath 'Scripts\Initialize-PowerCLIEnvironment.ps1')
 }
 $ErrorActionPreference="Continue"
+#>
 
 # -----------------------
 # Define Global Variables
