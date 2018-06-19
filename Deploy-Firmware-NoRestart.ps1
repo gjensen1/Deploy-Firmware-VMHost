@@ -1,4 +1,9 @@
-﻿<# 
+﻿param(
+    [Parameter(Mandatory=$true)][String]$vCenter,
+#    [Parameter(Mandatory=$true)][String]$ESXiRootPW,
+    [String]$Path
+    )
+<# 
 *******************************************************************************************************************
 Authored Date:    March 2018
 Original Author:  Graham Jensen
@@ -23,12 +28,7 @@ Original Author:  Graham Jensen
 .NOTES
 Prerequisites:
 
-    #1  This script uses the VMware modules installed by the installation of VMware PowerCLI
-        ENSURE that VMware PowerCLI has been installed.  
-    
-        Installation media can be found here: 
-        \\cihs.ad.gov.on.ca\tbs\Groups\ITS\DCO\RHS\RHS\Software\VMware
-
+    #1  This script uses the VMware modules installed by the installation of VMware PowerCLI 10
 
 ===================================================================================================================
 Update Log:   Please use this section to document changes made to this script
@@ -41,28 +41,13 @@ Update <Date>
 -----------------------------------------------------------------------------
 *******************************************************************************************************************
 #>
-<#
-# +------------------------------------------------------+
-# |        Load VMware modules if not loaded             |
-# +------------------------------------------------------+
-"Loading VMWare Modules"
-$ErrorActionPreference="SilentlyContinue" 
-if ( !(Get-Module -Name VMware.VimAutomation.Core -ErrorAction SilentlyContinue) ) {
-    if (Test-Path -Path 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\VMware, Inc.\VMware vSphere PowerCLI' ) {
-        $Regkey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\VMware, Inc.\VMware vSphere PowerCLI'
-       
-    } else {
-        $Regkey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\VMware, Inc.\VMware vSphere PowerCLI'
-    }
-    . (join-path -path (Get-ItemProperty  $Regkey).InstallPath -childpath 'Scripts\Initialize-PowerCLIEnvironment.ps1')
-}
-$ErrorActionPreference="Continue"
-#>
 
 # -----------------------
 # Define Global Variables
 # -----------------------
 $Global:Folder = $env:USERPROFILE+"\Documents\DeployFirmware"
+$Global:WorkingFolder = $Null
+$Global:LogLocation = $Null
 
 #*****************
 # Get VC from User
@@ -100,7 +85,8 @@ Function Connect-VC {
     [CmdletBinding()]
     Param()
     "Connecting to $Global:VCName"
-    Connect-VIServer $Global:VCName -Credential $Global:Creds -WarningAction SilentlyContinue
+    #Connect-VIServer $Global:VCName -Credential $Global:Creds -WarningAction SilentlyContinue
+    Connect-VIServer $Global:VCName -WarningAction SilentlyContinue
 }
 #***********************
 # EndFunction Connect-VC
@@ -152,40 +138,6 @@ Function Get-FileName {
 #*************************
 
 #*************************
-# Function Get-CommandFile
-#*************************
-Function Get-CommandFile {
-    [CmdletBinding()]
-    Param($initialDirectory)
-    [System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null
-    $OpenFileDialog = New-Object System.Windows.Forms.OpenFileDialog
-    $OpenFileDialog.initialDirectory = $initialDirectory
-    $OpenFileDialog.filter = "TXT (*.txt)| *.txt"
-    $OpenFileDialog.ShowDialog() | Out-Null
-    Return $OpenFileDialog.filename
-}
-#****************************
-# EndFunction Get-CommandFile
-#****************************
-
-#******************************
-# Function Generate-Command-Txt
-#******************************
-Function Generate-Command-Txt{
-    [CmdletBinding()]
-    Param($FileToTransfer)
-    $FileName = [System.IO.Path]::GetFileName("$FileToTransfer")
-    $FileNameSplit = $FileName.split('.')
-    $VMexe = $FileNameSplit[0]+".vmexe"
-    "unzip -o /tmp/$FileName -d /tmp" | Out-File -Encoding ascii $Global:Folder\command.txt
-    "cd /tmp" | Out-File -Encoding ascii $Global:Folder\command.txt -Append
-    "./$VMexe" | Out-File -Encoding ascii $Global:Folder\command.txt -Append
-}
-#*********************************
-# EndFunction Generate-Command-Txt
-#*********************************
-
-#*************************
 # Function Read-TargetList
 #*************************
 Function Read-TargetList {
@@ -197,6 +149,25 @@ Function Read-TargetList {
 #****************************
 # EndFunction Read-TargetList
 #****************************
+
+#**************************
+# Function Create-LogFolder
+#**************************
+Function Create-LogFolder {
+    [CmdletBinding()]
+    Param($FolderLocation)
+    "Building Local folder structure"
+    $Global:LogLocation = "$FolderLocation\Logs-$(Get-Date -Format yyyy-MM-dd-hh-mm-tt)" 
+    If (!(Test-Path $LogLocation)) {
+        New-Item $LogLocation -type Directory
+        }
+   "Folder Structure built"
+#   $FolderLocation 
+#    Return $LogLocation
+}
+#*****************************
+# EndFunction Create-LogFolder
+#*****************************
 
 #**************************
 # Funtion Enable-VMHost-SSH
@@ -224,45 +195,6 @@ Function Disable-VMHost-SSH {
 # EndFunction Disable-VMHost-SSH
 #******************************
 
-#*********************
-# Function Shutdown-VMs
-#*********************
-Function Shutdown-VMs {
-    [CmdletBinding()]
-    Param($vmhost)
-    $vms = get-vmhost -Name $vmhost | get-vm | where {$_.PowerState -eq "PoweredOn"}
-    foreach ($vm in $vms) {
-        "Shutting Down $vm on $vmhost"
-        Shutdown-VMGuest -VM $vm -Confirm:$false >$null
-        }
-   # Sleep 60
-    
-}
-#************************
-# EndFunction Shutdown-VMs
-#************************
-
-
-#*********************
-# Function Reboot-Host
-#*********************
-Function Reboot-Host {
-    [CmdletBinding()]
-    Param($vmhost)
-    $vms = get-vmhost -Name $vmhost | get-vm | where {$_.PowerState -eq "PoweredOn"} 
-    If ($vms.count -eq 0) {
-        "Restarting $vmhost"
-        Restart-VMHost -VMHost $vmhost -Force -Confirm:$false >$null
-        }
-        Else {
-            Sleep 30
-            Reboot-Host $VMhost
-            }
-}
-#************************
-# EndFunction Reboot-Host
-#************************
-
 #***************************
 # Funtion Build-Host-Strings
 #***************************
@@ -287,7 +219,7 @@ Function Accept-SSH-Key {
     [CmdletBinding()]
     Param($vmsshhost)
     "Doing initial SSH connection to $vmsshhost to register it's SSH Key"
-    echo y | plink.exe -ssh $vmsshhost "exit" #> $null    
+    echo y | plink.exe -ssh $vmsshhost "exit" > $null    
     
 }
 #**************************
@@ -299,9 +231,9 @@ Function Accept-SSH-Key {
 #*********************************
 Function Transfer-Payload-to-Host{
     [CmdletBinding()]
-    Param($TransferTo,$FileToTransfer,$RootPW)
+    Param($TransferTo,$FileToTransfer,$RootPW,$Log)
     "Transfering $FileToTransfer to $TransferTo"
-    pscp.exe -pw $RootPW $FileToTransfer $TransferTo
+    pscp.exe -pw $RootPW $FileToTransfer $TransferTo > $Log
     
 }
 #************************************
@@ -313,9 +245,10 @@ Function Transfer-Payload-to-Host{
 #************************
 Function Execute-Payload{
     [CmdletBinding()]
-    Param($SSHHost, $RootPW, $CmdTxt)
+    Param($SSHHost, $RootPW, $CmdTxt, $Log)
+    "Executing Payload on $SSHHost"
     #$CmdTxt = "$Global:Folder\command.txt"
-    plink -ssh $SSHHost -pw $RootPW -m $CmdTxt
+    plink -ssh $SSHHost -pw $RootPW -m $CmdTxt >> $Log
 }
 #************************
 # EndFuntion Execute-Payload
@@ -329,45 +262,52 @@ $ErrorActionPreference="SilentlyContinue"
 
 "=========================================================="
 " "
-Write-Host "Get CIHS credentials" -ForegroundColor Yellow
-$Global:Creds = Get-Credential -Credential $null
+#Write-Host "Get CIHS credentials" -ForegroundColor Yellow
+#$Global:Creds = Get-Credential -Credential $null
 
-Get-VCenter
+#Get-VCenter
+$Global:VCName = $vCenter
 Connect-VC
 "----------------------------------------------------------"
+#$RootPW = $ESXiRootPW
 $RootPW = Get-RootPW
 "----------------------------------------------------------"
 "Get Zip file to be transfered to host"
 $FileToTransfer = Get-FileToTransfer $Global:Folder
+$Global:WorkingFolder = Split-Path -Path $FileToTransfer
+#$Global:WorkingFolder = Split-Path -Path $OpenFileDialog.FileName
+$Global:WorkingFolder
 "----------------------------------------------------------"
 "Get Target List"
-$inputFile = Get-FileName $Global:Folder
+#$inputFile = Get-FileName $Global:WorkingFolder
+$inputFile = "$Global:WorkingFolder\Targets.txt"
+$inputFile
 "----------------------------------------------------------"
-#"Generate Command.txt to be used later during payload execution"
 "Get Command File for execution of payload"
-#Generate-Command-Txt $FileToTransfer
-$CommandFile = Get-FileName $Global:Folder
+#$CommandFile = Get-FileName $Global:WorkingFolder
+$CommandFile = "$Global:WorkingFolder\Commands.txt"
+$CommandFile
 "----------------------------------------------------------"
 "Reading Target List"
 $VMHostList = Read-TargetList $inputFile
 "----------------------------------------------------------"
+"Creating LogFile Location for this run"
+Create-LogFolder $Global:Folder
+"----------------------------------------------------------"
 "Processing Target List"
 ForEach ($VMhost in $VMHostList){
-    Enable-VMHost-SSH $VMhost
+    $Logfile = $null
+    Enable-VMHost-SSH $VMhost 
     $SSHInfo = Build-Host-Strings $VMhost
     Accept-SSH-Key $SSHInfo.host
-    Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW
-    Execute-Payload $SSHInfo.host $RootPW $CommandFile
+    $LogFile = "$Global:LogLocation\$VMHost.txt"
+    $LogFile
+    Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW $LogFile
+    Execute-Payload $SSHInfo.host $RootPW $CommandFile $LogFile
     Disable-VMHost-SSH $VMHost
     #Shutdown-VMs $VMhost
     "----------------------------------------------------------"
 }
-<#Loop through again and initiate host reboots
-"Processing Target List for Host Reboots"
-ForEach ($VMhost in $VMHostList){
-    Reboot-Host $VMhost  
-}#>
-
 Disconnect-VC
 #Clean-Up
 
