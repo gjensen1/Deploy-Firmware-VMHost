@@ -19,7 +19,8 @@ Original Author:  Graham Jensen
    domains.
 
    Prompted inputs:  vCenter containing the targets, CIHS C3 credentials, ESXi Root Password, 
-                     Location of target list, ZIP file to deploy 
+                     Location of ZIP file to deploy, included in the same folder as the zip 
+                     file should the the Commands.txt and Targets.txt files. 
 
    Outputs:          
 
@@ -28,7 +29,9 @@ Original Author:  Graham Jensen
 .NOTES
 Prerequisites:
 
-    #1  This script uses the VMware modules installed by the installation of VMware PowerCLI 10
+    #1  PowerCLI 10
+    #2  Putty
+    #3  WinSCP
 
 ===================================================================================================================
 Update Log:   Please use this section to document changes made to this script
@@ -45,9 +48,66 @@ Update <Date>
 # -----------------------
 # Define Global Variables
 # -----------------------
-$Global:Folder = $env:USERPROFILE+"\Documents\DeployFirmware"
+$Global:Folder = $env:USERPROFILE+"\Documents\HostRemediation\DeployFirmware"
 $Global:WorkingFolder = $Null
 $Global:LogLocation = $Null
+
+#**************************
+# Function Check-PowerCLI10 
+#**************************
+Function Check-PowerCLI10 {
+    [CmdletBinding()]
+    Param()
+    #Check for Prereqs for the script
+    #This includes, PowerCLI 10, plink, and pscp
+
+    #Check for PowerCLI 10
+    $powercli = Get-Module -ListAvailable VMware.PowerCLI
+    if (!($powercli.version.Major -eq "10")) {
+        Throw "VMware PowerCLI 10 is not installed on your system!!!"
+    }
+    Else {
+        Write-Host "PowerCLI 10 is Installed" -ForegroundColor Green
+    } 
+}
+#*****************************
+# EndFunction Check-PowerCLI10
+#*****************************
+
+#*********************
+# Function Check-Putty 
+#*********************
+Function Check-Putty {
+    $Putty = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where DisplayName -Like "PuTTY*"
+    If (!($Putty)){
+        Throw "Putty is not installed on your system!!!"
+    }
+    Else {
+        $PuttyName = $Putty.DisplayName
+        Write-Host "$PuttyName is installed" -ForegroundColor Green
+    }
+
+}
+#************************
+# EndFunction Check-Putty
+#************************
+
+#**********************
+# Function Check-WinSCP 
+#**********************
+Function Check-WinSCP {
+    $WinSCP = Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Where DisplayName -Like "WinSCP*"
+    If (!($WinSCP)){
+        Throw "WinSCP is not installed on your system!!!"
+    }
+    Else {
+        $WinSCPName = $WinSCP.DisplayName
+        Write-Host "$WinSCPName is installed" -ForegroundColor Green
+    }
+}
+#*************************
+# EndFunction Check-WinSCP
+#*************************
 
 #*****************
 # Get VC from User
@@ -85,8 +145,8 @@ Function Connect-VC {
     [CmdletBinding()]
     Param()
     "Connecting to $Global:VCName"
-    #Connect-VIServer $Global:VCName -Credential $Global:Creds -WarningAction SilentlyContinue
-    Connect-VIServer $Global:VCName -WarningAction SilentlyContinue
+    Connect-VIServer $Global:VCName -Credential $Global:Creds -WarningAction SilentlyContinue
+    #Connect-VIServer $Global:VCName -WarningAction SilentlyContinue
 }
 #***********************
 # EndFunction Connect-VC
@@ -259,11 +319,24 @@ Function Execute-Payload{
 #***************
 CLS
 $ErrorActionPreference="SilentlyContinue"
+Stop-Transcript | out-null
+$ErrorActionPreference="Continue"
+Start-Transcript -path $Global:Folder\Deploy-Firmware-Log-$(Get-Date -Format yyyy-MM-dd-hh-mm-tt).txt
+"=========================================================="
+#Verify all require software is installed
+"Checking for required Software on your system"
+"=========================================================="
+Check-PowerCLI10
+#Check-Putty
+Check-WinSCP
+
+
+$ErrorActionPreference="SilentlyContinue"
 
 "=========================================================="
 " "
-#Write-Host "Get CIHS credentials" -ForegroundColor Yellow
-#$Global:Creds = Get-Credential -Credential $null
+Write-Host "Get CIHS credentials" -ForegroundColor Yellow
+$Global:Creds = Get-Credential -Credential $null
 
 #Get-VCenter
 $Global:VCName = $vCenter
@@ -279,8 +352,8 @@ $Global:WorkingFolder = Split-Path -Path $FileToTransfer
 $Global:WorkingFolder
 "----------------------------------------------------------"
 "Get Target List"
-#$inputFile = Get-FileName $Global:WorkingFolder
-$inputFile = "$Global:WorkingFolder\Targets.txt"
+$inputFile = Get-FileName $Global:WorkingFolder
+#$inputFile = "$Global:WorkingFolder\Targets.txt"
 $inputFile
 "----------------------------------------------------------"
 "Get Command File for execution of payload"
@@ -303,6 +376,7 @@ ForEach ($VMhost in $VMHostList){
     $LogFile = "$Global:LogLocation\$VMHost.txt"
     $LogFile
     Transfer-Payload-to-Host $SSHInfo.TransferTo $FileToTransfer $RootPW $LogFile
+    Enable-VMHost-SSH $VMhost
     Execute-Payload $SSHInfo.host $RootPW $CommandFile $LogFile
     Disable-VMHost-SSH $VMHost
     #Shutdown-VMs $VMhost
