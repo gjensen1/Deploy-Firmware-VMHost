@@ -63,7 +63,7 @@ Function Check-PowerCLI10 {
 
     #Check for PowerCLI 10
     $powercli = Get-Module -ListAvailable VMware.PowerCLI
-    if (!($powercli.version.Major -eq "10")) {
+    if (!($powercli.version.Major -ge "10")) {
         Throw "VMware PowerCLI 10 is not installed on your system!!!"
     }
     Else {
